@@ -16,11 +16,42 @@ export interface SummaryData {
   region: string;
 }
 
-// Regional data for comprehensive dashboard
-export const regions = [
-  'North Region', 'South Region', 'East Region', 'West Region', 
-  'Central Region', 'Northeast Region', 'Southeast Region', 'Northwest Region'
+// Indian states mapped to regions
+export const states = [
+  // North Region
+  'Punjab', 'Haryana', 'Himachal Pradesh', 'Uttarakhand', 'Delhi', 'Chandigarh',
+  // South Region  
+  'Karnataka', 'Tamil Nadu', 'Andhra Pradesh', 'Telangana', 'Kerala', 'Puducherry',
+  // East Region
+  'West Bengal', 'Odisha', 'Jharkhand', 'Bihar',
+  // West Region
+  'Maharashtra', 'Gujarat', 'Rajasthan', 'Goa', 'Daman and Diu',
+  // Central Region
+  'Madhya Pradesh', 'Chhattisgarh', 'Uttar Pradesh',
+  // Northeast Region
+  'Assam', 'Arunachal Pradesh', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Tripura', 'Sikkim'
 ];
+
+// Function to map states to regions
+export const getRegionFromState = (state: string): string => {
+  const regionMapping: { [key: string]: string[] } = {
+    'North Region': ['Punjab', 'Haryana', 'Himachal Pradesh', 'Uttarakhand', 'Delhi', 'Chandigarh'],
+    'South Region': ['Karnataka', 'Tamil Nadu', 'Andhra Pradesh', 'Telangana', 'Kerala', 'Puducherry'],
+    'East Region': ['West Bengal', 'Odisha', 'Jharkhand', 'Bihar'],
+    'West Region': ['Maharashtra', 'Gujarat', 'Rajasthan', 'Goa', 'Daman and Diu'],
+    'Central Region': ['Madhya Pradesh', 'Chhattisgarh', 'Uttar Pradesh'],
+    'Northeast Region': ['Assam', 'Arunachal Pradesh', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Tripura', 'Sikkim']
+  };
+  
+  for (const [region, stateList] of Object.entries(regionMapping)) {
+    if (stateList.includes(state)) {
+      return region;
+    }
+  }
+  return 'Unknown Region';
+};
+
+export const regions = ['North Region', 'South Region', 'East Region', 'West Region', 'Central Region', 'Northeast Region'];
 
 // Disease types commonly found in livestock
 export const diseaseTypes = [
@@ -35,7 +66,7 @@ export const generateMockData = (): SummaryData[] => {
   const today = new Date();
   
   for (let i = 0; i < 30; i++) {
-    for (const region of regions) {
+    for (const state of states) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       
@@ -70,13 +101,13 @@ export const generateMockData = (): SummaryData[] => {
       else if (mortalityRatio > 0.01 || affectedRatio > 0.05) riskLevel = 'Medium';
       
       data.push({
-        id: `${region.replace(' ', '_').toLowerCase()}_${date.toISOString().split('T')[0]}_${Math.random().toString(36).substr(2, 9)}`,
+        id: `${state.replace(' ', '_').toLowerCase()}_${date.toISOString().split('T')[0]}_${Math.random().toString(36).substr(2, 9)}`,
         totalAnimals,
         totalAnimalsVaccinated: totalVaccinated,
         diseases,
         riskLevel,
         timestamp: date,
-        region
+        region: state
       });
     }
   }
@@ -87,7 +118,8 @@ export const generateMockData = (): SummaryData[] => {
 // Analytics helper functions
 export const getRegionalSummary = (data: SummaryData[]) => {
   const regionalData = regions.map(region => {
-    const regionData = data.filter(item => item.region === region);
+    const regionStates = states.filter(state => getRegionFromState(state) === region);
+    const regionData = data.filter(item => regionStates.includes(item.region));
     const latest = regionData[0];
     
     const totalAnimals = regionData.reduce((sum, item) => sum + item.totalAnimals, 0);
@@ -107,11 +139,132 @@ export const getRegionalSummary = (data: SummaryData[]) => {
       totalDeaths,
       vaccinationRate: latest ? (latest.totalAnimalsVaccinated / latest.totalAnimals) * 100 : 0,
       mortalityRate: totalAnimals > 0 ? (totalDeaths / totalAnimals) * 100 : 0,
-      riskLevel: latest?.riskLevel || 'Low'
+      riskLevel: latest?.riskLevel || 'Low',
+      statesCount: regionStates.length
     };
   });
   
   return regionalData;
+};
+
+// Advanced Analytics Functions
+export const getVaccinationTrends = (data: SummaryData[]) => {
+  const trends = getTimeSeriesData(data).map(item => ({
+    ...item,
+    vaccinationRate: item.totalAnimals > 0 ? (item.totalVaccinated / item.totalAnimals) * 100 : 0,
+    immunityGap: item.totalAnimals - item.totalVaccinated,
+    diseasePrevalence: item.totalAnimals > 0 ? (item.totalAffected / item.totalAnimals) * 100 : 0
+  }));
+  
+  return trends;
+};
+
+export const getDiseaseHotspots = (data: SummaryData[]) => {
+  const hotspots = new Map<string, { state: string; totalCases: number; severity: number; diseases: string[] }>();
+  
+  data.forEach(item => {
+    const totalCases = item.diseases.reduce((sum, disease) => sum + disease.noOfAnimals, 0);
+    const totalDeaths = item.diseases.reduce((sum, disease) => sum + disease.noOfAnimalsDied, 0);
+    const severity = totalCases > 0 ? (totalDeaths / totalCases) * 100 : 0;
+    const diseaseNames = item.diseases.map(d => d.name);
+    
+    if (hotspots.has(item.region)) {
+      const existing = hotspots.get(item.region)!;
+      hotspots.set(item.region, {
+        state: item.region,
+        totalCases: existing.totalCases + totalCases,
+        severity: Math.max(existing.severity, severity),
+        diseases: [...new Set([...existing.diseases, ...diseaseNames])]
+      });
+    } else {
+      hotspots.set(item.region, {
+        state: item.region,
+        totalCases,
+        severity,
+        diseases: diseaseNames
+      });
+    }
+  });
+  
+  return Array.from(hotspots.values())
+    .sort((a, b) => b.totalCases - a.totalCases)
+    .slice(0, 10);
+};
+
+export const getEconomicImpact = (data: SummaryData[]) => {
+  const avgAnimalValue = 15000; // Average value per animal in INR
+  const vaccinationCost = 200; // Cost per vaccination in INR
+  
+  return data.map(item => {
+    const totalDeaths = item.diseases.reduce((sum, disease) => sum + disease.noOfAnimalsDied, 0);
+    const economicLoss = totalDeaths * avgAnimalValue;
+    const vaccinationInvestment = item.totalAnimalsVaccinated * vaccinationCost;
+    const preventedDeaths = Math.floor(item.totalAnimalsVaccinated * 0.15); // Assumed 15% would have died without vaccination
+    const lossPreventedValue = preventedDeaths * avgAnimalValue;
+    const roi = vaccinationInvestment > 0 ? ((lossPreventedValue - vaccinationInvestment) / vaccinationInvestment) * 100 : 0;
+    
+    return {
+      region: item.region,
+      timestamp: item.timestamp,
+      economicLoss,
+      vaccinationInvestment,
+      lossPreventedValue,
+      roi,
+      netBenefit: lossPreventedValue - vaccinationInvestment
+    };
+  });
+};
+
+export const getSeasonalPatterns = (data: SummaryData[]) => {
+  const monthlyData = new Map<string, { month: string; cases: number; deaths: number; vaccinations: number }>();
+  
+  data.forEach(item => {
+    const month = item.timestamp.toLocaleString('default', { month: 'long' });
+    const cases = item.diseases.reduce((sum, disease) => sum + disease.noOfAnimals, 0);
+    const deaths = item.diseases.reduce((sum, disease) => sum + disease.noOfAnimalsDied, 0);
+    
+    if (monthlyData.has(month)) {
+      const existing = monthlyData.get(month)!;
+      monthlyData.set(month, {
+        month,
+        cases: existing.cases + cases,
+        deaths: existing.deaths + deaths,
+        vaccinations: existing.vaccinations + item.totalAnimalsVaccinated
+      });
+    } else {
+      monthlyData.set(month, {
+        month,
+        cases,
+        deaths,
+        vaccinations: item.totalAnimalsVaccinated
+      });
+    }
+  });
+  
+  return Array.from(monthlyData.values());
+};
+
+export const getRiskPrediction = (data: SummaryData[]) => {
+  const recentData = data.slice(0, 7); // Last 7 days
+  const avgAffectedRate = recentData.reduce((sum, item) => {
+    const affected = item.diseases.reduce((diseaseSum, disease) => diseaseSum + disease.noOfAnimals, 0);
+    return sum + (affected / item.totalAnimals);
+  }, 0) / recentData.length;
+  
+  const avgMortalityRate = recentData.reduce((sum, item) => {
+    const deaths = item.diseases.reduce((diseaseSum, disease) => diseaseSum + disease.noOfAnimalsDied, 0);
+    const affected = item.diseases.reduce((diseaseSum, disease) => diseaseSum + disease.noOfAnimals, 0);
+    return sum + (affected > 0 ? deaths / affected : 0);
+  }, 0) / recentData.length;
+  
+  const trendMultiplier = avgAffectedRate > 0.1 ? 1.5 : avgAffectedRate > 0.05 ? 1.2 : 1.0;
+  
+  return {
+    riskScore: Math.min(100, (avgAffectedRate * 100 + avgMortalityRate * 100) * trendMultiplier),
+    trend: avgAffectedRate > 0.1 ? 'increasing' : avgAffectedRate > 0.05 ? 'stable' : 'decreasing',
+    recommendation: avgAffectedRate > 0.1 ? 'Immediate intervention required' : 
+                   avgAffectedRate > 0.05 ? 'Enhanced monitoring needed' : 'Continue current protocols'
+  };
 };
 
 export const getDiseaseAnalytics = (data: SummaryData[]) => {
