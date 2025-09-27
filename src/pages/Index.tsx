@@ -1,12 +1,228 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState, useMemo } from "react";
+import { StatCard } from "@/components/dashboard/StatCard";
+import { RegionFilter } from "@/components/dashboard/RegionFilter";
+import { RiskLevelIndicator } from "@/components/dashboard/RiskLevelIndicator";
+import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
+import { DataTable } from "@/components/dashboard/DataTable";
+import { VaccinationChart } from "@/components/dashboard/charts/VaccinationChart";
+import { DiseaseBreakdownChart } from "@/components/dashboard/charts/DiseaseBreakdownChart";
+import { RegionalComparisonChart } from "@/components/dashboard/charts/RegionalComparisonChart";
+import { TrendAnalysisChart } from "@/components/dashboard/charts/TrendAnalysisChart";
+import { 
+  mockData, 
+  getRegionalSummary, 
+  getDiseaseAnalytics, 
+  getTimeSeriesData,
+  regions 
+} from "@/data/mockData";
+import { 
+  Activity, 
+  Shield, 
+  AlertTriangle, 
+  TrendingUp,
+  Users,
+  MapPin,
+  Calendar,
+  BarChart3
+} from "lucide-react";
 
 const Index = () => {
+  const [selectedRegion, setSelectedRegion] = useState<string>("all");
+  
+  // Filter data based on selected region
+  const filteredData = useMemo(() => {
+    if (selectedRegion === "all") return mockData;
+    return mockData.filter(item => item.region === selectedRegion);
+  }, [selectedRegion]);
+
+  // Calculate analytics
+  const regionalSummary = useMemo(() => getRegionalSummary(mockData), []);
+  const diseaseAnalytics = useMemo(() => getDiseaseAnalytics(filteredData), [filteredData]);
+  const timeSeriesData = useMemo(() => getTimeSeriesData(filteredData), [filteredData]);
+
+  // Calculate overview statistics
+  const overviewStats = useMemo(() => {
+    const latest = filteredData.slice(0, regions.length);
+    const totalAnimals = latest.reduce((sum, item) => sum + item.totalAnimals, 0);
+    const totalVaccinated = latest.reduce((sum, item) => sum + item.totalAnimalsVaccinated, 0);
+    const totalAffected = diseaseAnalytics.reduce((sum, disease) => sum + disease.affected, 0);
+    const totalDeaths = diseaseAnalytics.reduce((sum, disease) => sum + disease.deaths, 0);
+    
+    const vaccinationRate = totalAnimals > 0 ? (totalVaccinated / totalAnimals) * 100 : 0;
+    const affectedRate = totalAnimals > 0 ? (totalAffected / totalAnimals) * 100 : 0;
+    const mortalityRate = totalAffected > 0 ? (totalDeaths / totalAffected) * 100 : 0;
+    
+    // Calculate high risk regions
+    const highRiskRegions = regionalSummary.filter(region => 
+      region.riskLevel === 'High' || region.riskLevel === 'Critical'
+    ).length;
+
+    return {
+      totalAnimals,
+      totalVaccinated,
+      totalAffected,
+      totalDeaths,
+      vaccinationRate,
+      affectedRate,
+      mortalityRate,
+      highRiskRegions,
+      activeOutbreaks: diseaseAnalytics.length
+    };
+  }, [filteredData, diseaseAnalytics, regionalSummary]);
+
+  // Generate mock alerts
+  const mockAlerts = useMemo(() => {
+    const alerts: any[] = [];
+    
+    // High mortality rate alerts
+    diseaseAnalytics.slice(0, 3).forEach(disease => {
+      if (disease.mortalityRate > 10) {
+        alerts.push({
+          id: `alert-${disease.name}`,
+          type: 'mortality',
+          title: `High Mortality Rate: ${disease.name}`,
+          description: `Mortality rate of ${disease.mortalityRate.toFixed(1)}% detected across affected farms`,
+          region: selectedRegion === 'all' ? 'Multiple Regions' : selectedRegion,
+          timestamp: new Date(Date.now() - Math.random() * 3600000),
+          severity: disease.mortalityRate > 20 ? 'Critical' : 'High'
+        });
+      }
+    });
+
+    // Low vaccination rate alerts
+    if (overviewStats.vaccinationRate < 70) {
+      alerts.push({
+        id: 'alert-vaccination',
+        type: 'vaccination',
+        title: 'Low Vaccination Coverage',
+        description: `Current vaccination rate of ${overviewStats.vaccinationRate.toFixed(1)}% is below target threshold`,
+        region: selectedRegion === 'all' ? 'Multiple Regions' : selectedRegion,
+        timestamp: new Date(Date.now() - Math.random() * 3600000),
+        severity: overviewStats.vaccinationRate < 50 ? 'High' : 'Medium'
+      });
+    }
+
+    // Outbreak alerts
+    if (diseaseAnalytics.length > 0) {
+      const topDisease = diseaseAnalytics[0];
+      alerts.push({
+        id: 'alert-outbreak',
+        type: 'outbreak',
+        title: `Active Outbreak: ${topDisease.name}`,
+        description: `${topDisease.affected.toLocaleString()} animals affected with ${topDisease.occurrences} reported cases`,
+        region: selectedRegion === 'all' ? 'Multiple Regions' : selectedRegion,
+        timestamp: new Date(Date.now() - Math.random() * 3600000),
+        severity: topDisease.affected > 1000 ? 'Critical' : 'High'
+      });
+    }
+
+    return alerts;
+  }, [diseaseAnalytics, overviewStats, selectedRegion]);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center space-x-3">
+              <div className="h-8 w-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center">
+                <BarChart3 className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Animal Health Dashboard</h1>
+                <p className="text-sm text-gray-500">Government Monitoring System</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <RegionFilter 
+                selectedRegion={selectedRegion}
+                onRegionChange={setSelectedRegion}
+              />
+              <div className="flex items-center space-x-2 text-sm text-gray-500">
+                <Calendar className="h-4 w-4" />
+                <span>Last updated: {new Date().toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Overview Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <StatCard
+            title="Total Animals"
+            value={overviewStats.totalAnimals}
+            icon={Users}
+            variant="default"
+            description="Across all monitored farms"
+          />
+          <StatCard
+            title="Vaccination Rate"
+            value={`${overviewStats.vaccinationRate.toFixed(1)}%`}
+            icon={Shield}
+            variant={overviewStats.vaccinationRate > 80 ? "success" : overviewStats.vaccinationRate > 60 ? "warning" : "danger"}
+            change={Math.floor(Math.random() * 10) - 5}
+            changeType={overviewStats.vaccinationRate > 75 ? "increase" : "decrease"}
+          />
+          <StatCard
+            title="Animals Affected"
+            value={overviewStats.totalAffected}
+            icon={AlertTriangle}
+            variant="warning"
+            badge={`${overviewStats.affectedRate.toFixed(2)}%`}
+          />
+          <StatCard
+            title="High Risk Regions"
+            value={overviewStats.highRiskRegions}
+            icon={MapPin}
+            variant={overviewStats.highRiskRegions > 2 ? "danger" : "success"}
+            description={`Out of ${regions.length} total regions`}
+          />
+        </div>
+
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <VaccinationChart data={timeSeriesData} />
+          <DiseaseBreakdownChart data={diseaseAnalytics} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <TrendAnalysisChart data={timeSeriesData} />
+          <RegionalComparisonChart data={regionalSummary} />
+        </div>
+
+        {/* Alerts and Tables Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <div className="lg:col-span-1">
+            <AlertsPanel alerts={mockAlerts} />
+          </div>
+          <div className="lg:col-span-2">
+            <DataTable 
+              data={regionalSummary} 
+              title="Regional Overview" 
+              type="regional" 
+            />
+          </div>
+        </div>
+
+        {/* Disease Analytics Table */}
+        <div className="mb-8">
+          <DataTable 
+            data={diseaseAnalytics} 
+            title="Disease Impact Analysis" 
+            type="disease" 
+          />
+        </div>
+
+        {/* Footer */}
+        <footer className="mt-16 py-8 border-t border-gray-200 text-center text-sm text-gray-500">
+          <p>Government Animal Health Monitoring System • Real-time data from {regions.length} regions</p>
+          <p className="mt-1">For emergency situations, contact the veterinary response team immediately</p>
+        </footer>
+      </main>
     </div>
   );
 };
