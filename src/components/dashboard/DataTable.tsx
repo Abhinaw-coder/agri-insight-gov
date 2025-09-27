@@ -7,7 +7,7 @@ import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 interface DataTableProps {
   data: any[];
   title?: string;
-  type?: 'regional' | 'disease' | 'timeline';
+  type?: 'regional' | 'disease' | 'timeline' | 'statewise';
 }
 
 export function DataTable({ data, title = "Data Overview", type = 'regional' }: DataTableProps) {
@@ -94,10 +94,65 @@ export function DataTable({ data, title = "Data Overview", type = 'regional' }: 
     </Table>
   );
 
+  const renderStatewiseTable = () => (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>State</TableHead>
+          <TableHead>Region</TableHead>
+          <TableHead className="text-right">Total Animals</TableHead>
+          <TableHead className="text-right">Vaccination Rate</TableHead>
+          <TableHead className="text-right">Affected Rate</TableHead>
+          <TableHead className="text-center">Risk Level</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.map((row, index) => (
+          <TableRow key={index} className="hover:bg-gray-50">
+            <TableCell className="font-medium">{row.state}</TableCell>
+            <TableCell className="text-sm text-gray-600">{row.region}</TableCell>
+            <TableCell className="text-right">{row.totalAnimals.toLocaleString()}</TableCell>
+            <TableCell className="text-right">
+              <div className="flex items-center justify-end space-x-1">
+                <span>{row.vaccinationRate.toFixed(1)}%</span>
+                <div className={`h-2 w-12 rounded-full bg-gray-200 overflow-hidden`}>
+                  <div 
+                    className={`h-full ${
+                      row.vaccinationRate > 80 ? 'bg-green-500' : 
+                      row.vaccinationRate > 60 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${Math.min(row.vaccinationRate, 100)}%` }}
+                  />
+                </div>
+              </div>
+            </TableCell>
+            <TableCell className="text-right">
+              <Badge 
+                variant="secondary" 
+                className={
+                  row.affectedRate > 5 ? 'bg-red-100 text-red-700' :
+                  row.affectedRate > 2 ? 'bg-orange-100 text-orange-700' :
+                  'bg-green-100 text-green-700'
+                }
+              >
+                {row.affectedRate.toFixed(2)}%
+              </Badge>
+            </TableCell>
+            <TableCell className="text-center">
+              <RiskLevelIndicator level={row.riskLevel} size="sm" showIcon={false} />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+
   const renderTable = () => {
     switch (type) {
       case 'disease':
         return renderDiseaseTable();
+      case 'statewise':
+        return renderStatewiseTable();
       case 'regional':
       default:
         return renderRegionalTable();

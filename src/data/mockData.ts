@@ -148,6 +148,63 @@ export const getRegionalSummary = (data: SummaryData[]) => {
 };
 
 // Advanced Analytics Functions
+export const getStatewiseAnalytics = (data: SummaryData[]) => {
+  const stateData = states.map(state => {
+    const stateEntries = data.filter(item => item.region === state);
+    const latest = stateEntries[0];
+    
+    const totalAnimals = stateEntries.reduce((sum, item) => sum + item.totalAnimals, 0);
+    const totalVaccinated = stateEntries.reduce((sum, item) => sum + item.totalAnimalsVaccinated, 0);
+    const totalAffected = stateEntries.reduce((sum, item) => 
+      sum + item.diseases.reduce((diseaseSum, disease) => diseaseSum + disease.noOfAnimals, 0), 0
+    );
+    const totalDeaths = stateEntries.reduce((sum, item) => 
+      sum + item.diseases.reduce((diseaseSum, disease) => diseaseSum + disease.noOfAnimalsDied, 0), 0
+    );
+    
+    return {
+      state,
+      region: getRegionFromState(state),
+      totalAnimals: latest?.totalAnimals || 0,
+      totalVaccinated: latest?.totalAnimalsVaccinated || 0,
+      totalAffected,
+      totalDeaths,
+      vaccinationRate: latest ? (latest.totalAnimalsVaccinated / latest.totalAnimals) * 100 : 0,
+      mortalityRate: totalAnimals > 0 ? (totalDeaths / totalAnimals) * 100 : 0,
+      affectedRate: latest && latest.totalAnimals > 0 ? (totalAffected / latest.totalAnimals) * 100 : 0,
+      riskLevel: latest?.riskLevel || 'Low',
+      activeDiseases: latest?.diseases.length || 0,
+      lastUpdated: latest?.timestamp || new Date()
+    };
+  });
+  
+  return stateData.sort((a, b) => b.totalAnimals - a.totalAnimals);
+};
+
+export const getTopPerformingStates = (data: SummaryData[]) => {
+  const stateAnalytics = getStatewiseAnalytics(data);
+  
+  return {
+    highestVaccination: stateAnalytics.sort((a, b) => b.vaccinationRate - a.vaccinationRate).slice(0, 5),
+    lowestMortality: stateAnalytics.sort((a, b) => a.mortalityRate - b.mortalityRate).slice(0, 5),
+    mostAnimals: stateAnalytics.sort((a, b) => b.totalAnimals - a.totalAnimals).slice(0, 5),
+    highestRisk: stateAnalytics.filter(s => s.riskLevel === 'Critical' || s.riskLevel === 'High').slice(0, 5)
+  };
+};
+
+export const getVaccinationEffectiveness = (data: SummaryData[]) => {
+  const stateData = getStatewiseAnalytics(data);
+  
+  return stateData.map(state => ({
+    state: state.state,
+    vaccinationRate: state.vaccinationRate,
+    mortalityRate: state.mortalityRate,
+    effectiveness: Math.max(0, 100 - (state.mortalityRate * 10)), // Higher vaccination should mean lower mortality
+    category: state.vaccinationRate > 80 ? 'High Coverage' : 
+             state.vaccinationRate > 60 ? 'Medium Coverage' : 'Low Coverage'
+  }));
+};
+
 export const getVaccinationTrends = (data: SummaryData[]) => {
   const trends = getTimeSeriesData(data).map(item => ({
     ...item,

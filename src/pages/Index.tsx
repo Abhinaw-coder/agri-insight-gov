@@ -8,12 +8,21 @@ import { VaccinationChart } from "@/components/dashboard/charts/VaccinationChart
 import { DiseaseBreakdownChart } from "@/components/dashboard/charts/DiseaseBreakdownChart";
 import { RegionalComparisonChart } from "@/components/dashboard/charts/RegionalComparisonChart";
 import { TrendAnalysisChart } from "@/components/dashboard/charts/TrendAnalysisChart";
+import { StatewiseAnalysisChart } from "@/components/dashboard/charts/StatewiseAnalysisChart";
+import { VaccinationEffectivenessChart } from "@/components/dashboard/charts/VaccinationEffectivenessChart";
+import { EconomicImpactChart } from "@/components/dashboard/charts/EconomicImpactChart";
 import { 
   mockData, 
   getRegionalSummary, 
   getDiseaseAnalytics, 
   getTimeSeriesData,
-  regions 
+  getStatewiseAnalytics,
+  getVaccinationEffectiveness,
+  getEconomicImpact,
+  getTopPerformingStates,
+  regions,
+  states,
+  getRegionFromState
 } from "@/data/mockData";
 import { 
   Activity, 
@@ -29,22 +38,50 @@ import {
 const Index = () => {
   const [selectedRegion, setSelectedRegion] = useState<string>("all");
   
-  // Filter data based on selected region
+  // Filter data based on selected region/state
   const filteredData = useMemo(() => {
     if (selectedRegion === "all") return mockData;
-    return mockData.filter(item => item.region === selectedRegion);
+    
+    // Check if it's a region or state
+    if (regions.includes(selectedRegion)) {
+      // Filter by region - get all states in that region
+      const regionStates = states.filter(state => getRegionFromState(state) === selectedRegion);
+      return mockData.filter(item => regionStates.includes(item.region));
+    } else {
+      // Filter by specific state
+      return mockData.filter(item => item.region === selectedRegion);
+    }
   }, [selectedRegion]);
 
   // Calculate analytics
   const regionalSummary = useMemo(() => getRegionalSummary(mockData), []);
+  const statewiseAnalytics = useMemo(() => getStatewiseAnalytics(filteredData), [filteredData]);
   const diseaseAnalytics = useMemo(() => getDiseaseAnalytics(filteredData), [filteredData]);
   const timeSeriesData = useMemo(() => getTimeSeriesData(filteredData), [filteredData]);
+  const vaccinationEffectiveness = useMemo(() => getVaccinationEffectiveness(filteredData), [filteredData]);
+  const economicImpact = useMemo(() => getEconomicImpact(filteredData), [filteredData]);
+  const topPerformingStates = useMemo(() => getTopPerformingStates(mockData), []);
 
   // Calculate overview statistics
   const overviewStats = useMemo(() => {
-    const latest = filteredData.slice(0, regions.length);
-    const totalAnimals = latest.reduce((sum, item) => sum + item.totalAnimals, 0);
-    const totalVaccinated = latest.reduce((sum, item) => sum + item.totalAnimalsVaccinated, 0);
+    const isStateFilter = states.includes(selectedRegion);
+    const isRegionFilter = regions.includes(selectedRegion);
+    
+    let relevantData = filteredData;
+    if (selectedRegion === "all") {
+      // For "all", take latest data from each state
+      relevantData = filteredData.slice(0, states.length);
+    } else if (isRegionFilter) {
+      // For region, take latest data from each state in that region
+      const regionStates = states.filter(state => getRegionFromState(state) === selectedRegion);
+      relevantData = filteredData.slice(0, regionStates.length);
+    } else if (isStateFilter) {
+      // For state, take just that state's latest data
+      relevantData = filteredData.slice(0, 1);
+    }
+    
+    const totalAnimals = relevantData.reduce((sum, item) => sum + item.totalAnimals, 0);
+    const totalVaccinated = relevantData.reduce((sum, item) => sum + item.totalAnimalsVaccinated, 0);
     const totalAffected = diseaseAnalytics.reduce((sum, disease) => sum + disease.affected, 0);
     const totalDeaths = diseaseAnalytics.reduce((sum, disease) => sum + disease.deaths, 0);
     
@@ -52,10 +89,21 @@ const Index = () => {
     const affectedRate = totalAnimals > 0 ? (totalAffected / totalAnimals) * 100 : 0;
     const mortalityRate = totalAffected > 0 ? (totalDeaths / totalAffected) * 100 : 0;
     
-    // Calculate high risk regions
-    const highRiskRegions = regionalSummary.filter(region => 
-      region.riskLevel === 'High' || region.riskLevel === 'Critical'
-    ).length;
+    // Calculate high risk areas based on filter type
+    let highRiskCount = 0;
+    if (selectedRegion === "all") {
+      highRiskCount = regionalSummary.filter(region => 
+        region.riskLevel === 'High' || region.riskLevel === 'Critical'
+      ).length;
+    } else if (isRegionFilter) {
+      highRiskCount = statewiseAnalytics.filter(state => 
+        state.riskLevel === 'High' || state.riskLevel === 'Critical'
+      ).length;
+    } else {
+      highRiskCount = statewiseAnalytics.filter(state => 
+        state.riskLevel === 'High' || state.riskLevel === 'Critical'
+      ).length;
+    }
 
     return {
       totalAnimals,
@@ -65,10 +113,11 @@ const Index = () => {
       vaccinationRate,
       affectedRate,
       mortalityRate,
-      highRiskRegions,
-      activeOutbreaks: diseaseAnalytics.length
+      highRiskAreas: highRiskCount,
+      activeOutbreaks: diseaseAnalytics.length,
+      filterType: selectedRegion === "all" ? "regions" : isRegionFilter ? "states" : "single state"
     };
-  }, [filteredData, diseaseAnalytics, regionalSummary]);
+  }, [filteredData, diseaseAnalytics, regionalSummary, statewiseAnalytics, selectedRegion]);
 
   // Generate mock alerts
   const mockAlerts = useMemo(() => {
@@ -175,15 +224,18 @@ const Index = () => {
             badge={`${overviewStats.affectedRate.toFixed(2)}%`}
           />
           <StatCard
-            title="High Risk Regions"
-            value={overviewStats.highRiskRegions}
+            title={overviewStats.filterType === "single state" ? "High Risk Areas" : 
+                   overviewStats.filterType === "states" ? "High Risk States" : "High Risk Regions"}
+            value={overviewStats.highRiskAreas}
             icon={MapPin}
-            variant={overviewStats.highRiskRegions > 2 ? "danger" : "success"}
-            description={`Out of ${regions.length} total regions`}
+            variant={overviewStats.highRiskAreas > 2 ? "danger" : "success"}
+            description={overviewStats.filterType === "single state" ? "In selected state" :
+                        overviewStats.filterType === "states" ? `Out of ${statewiseAnalytics.length} states` :
+                        `Out of ${regions.length} regions`}
           />
         </div>
 
-        {/* Charts Section */}
+        {/* Advanced Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <VaccinationChart data={timeSeriesData} />
           <DiseaseBreakdownChart data={diseaseAnalytics} />
@@ -191,8 +243,23 @@ const Index = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <TrendAnalysisChart data={timeSeriesData} />
-          <RegionalComparisonChart data={regionalSummary} />
+          <VaccinationEffectivenessChart data={vaccinationEffectiveness} />
         </div>
+
+        {/* State-wise Analysis */}
+        {(selectedRegion === "all" || regions.includes(selectedRegion)) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <StatewiseAnalysisChart data={statewiseAnalytics} />
+            <EconomicImpactChart data={economicImpact} />
+          </div>
+        )}
+
+        {/* Regional Comparison - only show when viewing all regions */}
+        {selectedRegion === "all" && (
+          <div className="mb-8">
+            <RegionalComparisonChart data={regionalSummary} />
+          </div>
+        )}
 
         {/* Alerts and Tables Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
@@ -201,9 +268,9 @@ const Index = () => {
           </div>
           <div className="lg:col-span-2">
             <DataTable 
-              data={regionalSummary} 
-              title="Regional Overview" 
-              type="regional" 
+              data={selectedRegion === "all" || regions.includes(selectedRegion) ? statewiseAnalytics : regionalSummary} 
+              title={selectedRegion === "all" || regions.includes(selectedRegion) ? "State-wise Overview" : "Regional Overview"} 
+              type={selectedRegion === "all" || regions.includes(selectedRegion) ? "statewise" : "regional"} 
             />
           </div>
         </div>
